@@ -1,0 +1,9 @@
+Package: com.local.gpsmasterpatch
+Name: GPS Master Patch
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Extends GPS Master membership
+Maintainer: local
+Author: local
+Section: Tweaks
+Depends: mobilesubstrate, firmware (>= 14.0)
