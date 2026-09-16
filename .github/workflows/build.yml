@@ -7,30 +7,30 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Theos
         run: |
-          brew install ldid make
-          git clone --recursive https://github.com/theos/theos.git $THEOS
-        env:
-          THEOS: ${{ runner.temp }}/theos
+          brew install ldid make xz
+          git clone --recursive https://github.com/theos/theos.git ~/theos
+          echo "THEOS=~/theos" >> $GITHUB_ENV
 
       - name: Setup iOS SDK
         run: |
-          cd $THEOS/sdks
-          curl -sL https://github.com/theos/sdks/releases/latest/download/sdks.tar.xz | tar xJf -
-        env:
-          THEOS: ${{ runner.temp }}/theos
+          mkdir -p ~/theos/sdks
+          cd ~/theos/sdks
+          curl -LO https://github.com/theos/sdks/releases/download/2024-08-26/iPhoneOS17.5.sdk.tar.xz
+          tar -xJf iPhoneOS17.5.sdk.tar.xz
+          ls -la
 
       - name: Build Package
         run: |
+          export THEOS=~/theos
+          export PATH="$THEOS/bin:$PATH"
           gmake package FINALPACKAGE=1
-        env:
-          THEOS: ${{ runner.temp }}/theos
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
