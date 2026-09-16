@@ -1,8 +1,8 @@
 Package: com.shellbay77.gpsmasterpatch
 Name: GPSMasterPatch
 Depends: mobilesubstrate
-Version: 1.0.0
-Architecture: iphoneos-arm
+Version: 1.0.1
+Architecture: iphoneos-arm64
 Description: Extends GPS Master membership expiration
 Maintainer: shellbay77
 Author: shellbay77
