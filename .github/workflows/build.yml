@@ -1,4 +1,4 @@
-name: Build GPSMasterPatch
+name: Build GPSMasterPatch Combined
 
 on:
   push:
@@ -23,17 +23,115 @@ jobs:
           mv sdks-master/*.sdk $THEOS/sdks/ 2>/dev/null || true
           echo "THEOS=$THEOS" >> $GITHUB_ENV
 
-      - name: Build Rootless Package
+      - name: Build Membership Patch Dylib
         run: |
           export THEOS=~/theos
           export PATH=$THEOS/bin:$PATH
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          echo "Patch built:"
+          ls packages/
 
-      - name: List Output
-        run: ls -la packages/
+      - name: Download Original GPS Master Deb
+        run: |
+          curl -L "http://apt.thebigboss.org/repofiles/cydia/debs2.0/gpsmaster_2.2.7.deb" -o gpsmaster_orig.deb
+          ls -lh gpsmaster_orig.deb
 
-      - name: Upload Artifact
+      - name: Extract and Combine
+        run: |
+          set -e
+          
+          # Extract our patch deb to get the built dylib
+          mkdir -p patch_extracted
+          cd patch_extracted
+          ar x ../packages/*.deb
+          tar xf data.tar* 2>/dev/null || true
+          cd ..
+          
+          # Extract original GPS Master deb
+          mkdir -p gpsmaster_extracted
+          cd gpsmaster_extracted
+          ar x ../gpsmaster_orig.deb
+          tar xf data.tar* 2>/dev/null || true
+          cd ..
+          
+          # Create combined rootless layout
+          mkdir -p combined/var/jb/Applications
+          mkdir -p combined/var/jb/Library/MobileSubstrate/DynamicLibraries
+          
+          # Copy GPS Master app
+          cp -r gpsmaster_extracted/Applications/GpsMaster.app combined/var/jb/Applications/
+          
+          # Copy original GPS Master plugin dylib + plist
+          cp gpsmaster_extracted/Library/MobileSubstrate/DynamicLibraries/gpsmasterplugin.dylib \
+             combined/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp gpsmaster_extracted/Library/MobileSubstrate/DynamicLibraries/gpsmasterplugin.plist \
+             combined/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          
+          # Copy our membership patch dylib + plist
+          cp patch_extracted/var/jb/Library/MobileSubstrate/DynamicLibraries/GPSMasterPatch.dylib \
+             combined/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cp patch_extracted/var/jb/Library/MobileSubstrate/DynamicLibraries/GPSMasterPatch.plist \
+             combined/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          
+          echo "Combined layout:"
+          find combined -type f | sort
+
+      - name: Package Combined Deb
+        run: |
+          set -e
+          
+          # Create DEBIAN control dir
+          mkdir -p combined/DEBIAN
+          
+          cat > combined/DEBIAN/control << 'EOF'
+          Package: com.shellbay77.gpsmastercomplete
+          Name: GPS Master Complete
+          Version: 2.2.7
+          Architecture: iphoneos-arm64
+          Description: GPS Master with membership patch (rootless)
+          Maintainer: shellbay77
+          Author: shellbay77
+          Section: Tweaks
+          Depends: mobilesubstrate, firmware (>= 15.0)
+          EOF
+          
+          cat > combined/DEBIAN/postinst << 'EOF'
+          #!/bin/bash
+          uicache -a 2>/dev/null || true
+          killall -9 SpringBoard 2>/dev/null || true
+          exit 0
+          EOF
+          chmod 755 combined/DEBIAN/postinst
+          
+          # Build the deb using dpkg-deb or manual method
+          mkdir -p final_packages
+          
+          # Use Theos dm.pl to package
+          export THEOS=~/theos
+          
+          # Manual deb packaging
+          cd combined
+          
+          # Create data.tar.gz (exclude DEBIAN)
+          tar czf ../data.tar.gz --exclude='./DEBIAN' .
+          
+          # Create control.tar.gz
+          cd DEBIAN
+          tar czf ../../control.tar.gz .
+          cd ../..
+          
+          # Create debian-binary
+          echo "2.0" > debian-binary
+          
+          # Combine into .deb using ar
+          ar rcs final_packages/com.shellbay77.gpsmastercomplete_2.2.7_iphoneos-arm64.deb \
+            debian-binary control.tar.gz data.tar.gz
+          
+          echo "Final package:"
+          ls -lh final_packages/
+
+      - name: Upload Combined Deb
         uses: actions/upload-artifact@v4
         with:
-          name: GPSMasterPatch-deb
-          path: packages/*.deb
+          name: GPSMasterComplete-deb
+          path: final_packages/*.deb
