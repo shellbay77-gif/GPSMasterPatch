@@ -7,16 +7,33 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Theos
-        uses: kabiroberai/theos-action@v1
+        run: |
+          set -e
+          brew install ldid xz make
+          export THEOS=~/theos
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+          
+          # Download iOS SDK
+          curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
+          unzip -q master.zip
+          mv sdks-master/*.sdk $THEOS/sdks/ 2>/dev/null || true
+          
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
 
-      - name: Build Package
-        run: make package FINALPACKAGE=1
+      - name: Build Package  
+        run: |
+          export THEOS=~/theos
+          export PATH=$THEOS/bin:$PATH
+          make package FINALPACKAGE=1
+
+      - name: List Output
+        run: ls -la packages/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
