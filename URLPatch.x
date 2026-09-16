@@ -1,7 +1,32 @@
 #import <Foundation/Foundation.h>
+#import <StoreKit/StoreKit.h>
 
 static NSString *const kHandledKey = @"GPSURLHandled";
 static NSString *const kNewHost    = @"v.fembabe.org";
+
+// All known membership UserDefaults keys from CAResponseData / cellmember pod
+static NSArray *memberIntKeys(void) {
+    return @[@"isMember", @"isPro", @"isVip", @"status", @"memberStatus",
+             @"ca_isMember", @"ca_isPro", @"ca_memberStatus",
+             @"kIsMember", @"kMemberStatus", @"GGisMember", @"GGmemberStatus"];
+}
+static NSArray *memberTimeKeys(void) {
+    return @[@"memberExTime", @"memberExpireTime", @"expireTime",
+             @"ca_memberExTime", @"ca_expireTime", @"kMemberExpireTime",
+             @"GGmemberExTime", @"GGexpireTime"];
+}
+static NSArray *memberStringKeys(void) {
+    return @[@"memberType", @"type", @"ca_memberType", @"kMemberType", @"GGmemberType"];
+}
+
+static void injectMembershipDefaults(void) {
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    NSInteger exTime = 4070908800LL; // 2099-01-01
+    for (NSString *k in memberIntKeys())    [ud setInteger:1        forKey:k];
+    for (NSString *k in memberTimeKeys())   [ud setInteger:exTime   forKey:k];
+    for (NSString *k in memberStringKeys()) [ud setObject:@"lifetime" forKey:k];
+    [ud synchronize];
+}
 
 static BOOL isDeadHost(NSString *host) {
     return [host hasSuffix:@"cellapp.cn"] || [host hasSuffix:@"hotbrainapp.com"];
@@ -92,7 +117,52 @@ static BOOL isDeadHost(NSString *host) {
 
 %end
 
+// ── UserDefaults intercept: always return active for membership keys ──────────
+%hook NSUserDefaults
+
+- (NSInteger)integerForKey:(NSString *)key {
+    for (NSString *k in memberIntKeys()) {
+        if ([key isEqualToString:k]) return 1;
+    }
+    for (NSString *k in memberTimeKeys()) {
+        if ([key isEqualToString:k]) return 4070908800LL;
+    }
+    return %orig;
+}
+
+- (BOOL)boolForKey:(NSString *)key {
+    for (NSString *k in memberIntKeys()) {
+        if ([key isEqualToString:k]) return YES;
+    }
+    return %orig;
+}
+
+- (id)objectForKey:(NSString *)key {
+    for (NSString *k in memberStringKeys()) {
+        if ([key isEqualToString:k]) return @"lifetime";
+    }
+    for (NSString *k in memberTimeKeys()) {
+        if ([key isEqualToString:k]) return @(4070908800LL);
+    }
+    for (NSString *k in memberIntKeys()) {
+        if ([key isEqualToString:k]) return @(1);
+    }
+    return %orig;
+}
+
+%end
+
+// ── Suppress StoreKit errors so the 500 dialog stops appearing ────────────────
+%hook SKProductsRequest
+
+- (void)start {
+    // Swallow the request entirely — no SIM means it always 500s anyway
+    // The delegate won't receive an error, so no dialog will appear
+}
+
+%end
+
 %ctor {
-    // Global fallback registration
     [NSURLProtocol registerClass:[GPSURLRedirectProtocol class]];
+    injectMembershipDefaults();
 }

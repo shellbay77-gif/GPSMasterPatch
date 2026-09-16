@@ -7,5 +7,6 @@ TWEAK_NAME = GPSMasterPatch
 
 GPSMasterPatch_FILES = Tweak.x URLPatch.x
 GPSMasterPatch_CFLAGS = -fobjc-arc
+GPSMasterPatch_FRAMEWORKS = Foundation StoreKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
