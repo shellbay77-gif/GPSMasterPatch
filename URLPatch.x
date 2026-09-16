@@ -8,7 +8,7 @@ static BOOL isDeadHost(NSString *host) {
 }
 
 @interface GPSURLRedirectProtocol : NSURLProtocol <NSURLSessionDataDelegate>
-@property (nonatomic, strong) NSURLSession *session;
+@property (nonatomic, strong) NSURLSession *innerSession;
 @end
 
 @implementation GPSURLRedirectProtocol
@@ -30,44 +30,38 @@ static BOOL isDeadHost(NSString *host) {
     [NSURLProtocol setProperty:@YES forKey:kHandledKey inRequest:req];
 
     NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration defaultSessionConfiguration];
-    self.session = [NSURLSession sessionWithConfiguration:cfg delegate:self delegateQueue:nil];
-    [[self.session dataTaskWithRequest:req] resume];
+    // Don't include custom protocols to avoid recursion
+    cfg.protocolClasses = @[];
+    self.innerSession = [NSURLSession sessionWithConfiguration:cfg delegate:self delegateQueue:nil];
+    [[self.innerSession dataTaskWithRequest:req] resume];
 }
 
 - (void)stopLoading {
-    [self.session invalidateAndCancel];
+    [self.innerSession invalidateAndCancel];
 }
 
-// Forward data/response/finish/error to the client
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
     didReceiveResponse:(NSURLResponse *)response
      completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
-    [self.client URLProtocol:self didReceiveResponse:response
-          cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
     completionHandler(NSURLSessionResponseAllow);
 }
 
-- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
-    didReceiveData:(NSData *)data {
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
     [self.client URLProtocol:self didLoadData:data];
 }
 
-- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
-    didCompleteWithError:(NSError *)error {
-    if (error) {
-        [self.client URLProtocol:self didFailWithError:error];
-    } else {
-        [self.client URLProtocolDidFinishLoading:self];
-    }
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+    if (error) [self.client URLProtocol:self didFailWithError:error];
+    else [self.client URLProtocolDidFinishLoading:self];
 }
 
-// Accept self-signed cert from v.fembabe.org
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
     didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge
      completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))completionHandler {
     if ([challenge.protectionSpace.host isEqualToString:kNewHost]) {
-        NSURLCredential *cred = [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust];
-        completionHandler(NSURLSessionAuthChallengeUseCredential, cred);
+        completionHandler(NSURLSessionAuthChallengeUseCredential,
+                         [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust]);
     } else {
         completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
     }
@@ -75,6 +69,30 @@ static BOOL isDeadHost(NSString *host) {
 
 @end
 
+// Inject our protocol into EVERY session configuration the app creates
+%hook NSURLSessionConfiguration
+
++ (NSURLSessionConfiguration *)defaultSessionConfiguration {
+    NSURLSessionConfiguration *cfg = %orig;
+    NSMutableArray *protos = [NSMutableArray arrayWithArray:cfg.protocolClasses ?: @[]];
+    if (![protos containsObject:[GPSURLRedirectProtocol class]])
+        [protos insertObject:[GPSURLRedirectProtocol class] atIndex:0];
+    cfg.protocolClasses = protos;
+    return cfg;
+}
+
++ (NSURLSessionConfiguration *)ephemeralSessionConfiguration {
+    NSURLSessionConfiguration *cfg = %orig;
+    NSMutableArray *protos = [NSMutableArray arrayWithArray:cfg.protocolClasses ?: @[]];
+    if (![protos containsObject:[GPSURLRedirectProtocol class]])
+        [protos insertObject:[GPSURLRedirectProtocol class] atIndex:0];
+    cfg.protocolClasses = protos;
+    return cfg;
+}
+
+%end
+
 %ctor {
+    // Global fallback registration
     [NSURLProtocol registerClass:[GPSURLRedirectProtocol class]];
 }
