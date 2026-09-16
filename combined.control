@@ -1,0 +1,9 @@
+Package: com.shellbay77.gpsmastercomplete
+Name: GPS Master Complete
+Version: 2.2.7
+Architecture: iphoneos-arm64
+Description: GPS Master with membership patch (rootless)
+Maintainer: shellbay77
+Author: shellbay77
+Section: Tweaks
+Depends: mobilesubstrate, firmware (>= 15.0)

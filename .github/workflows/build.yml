@@ -83,30 +83,14 @@ jobs:
 
           mkdir -p combined/DEBIAN
 
-          # No leading spaces — heredoc at column 0
-          cat > combined/DEBIAN/control << 'EOF'
-Package: com.shellbay77.gpsmastercomplete
-Name: GPS Master Complete
-Version: 2.2.7
-Architecture: iphoneos-arm64
-Description: GPS Master with membership patch (rootless)
-Maintainer: shellbay77
-Author: shellbay77
-Section: Tweaks
-Depends: mobilesubstrate, firmware (>= 15.0)
-EOF
+          # Control file from repo (avoids heredoc/YAML indent issues)
+          cp combined.control combined/DEBIAN/control
 
-          cat > combined/DEBIAN/postinst << 'EOF'
-#!/bin/bash
-uicache -a 2>/dev/null || true
-killall -9 SpringBoard 2>/dev/null || true
-exit 0
-EOF
+          printf '#!/bin/bash\nuicache -a 2>/dev/null || true\nkillall -9 SpringBoard 2>/dev/null || true\nexit 0\n' > combined/DEBIAN/postinst
           chmod 755 combined/DEBIAN/postinst
 
           mkdir -p final_packages
 
-          # dpkg-deb produces proper GNU AR format that Sileo/dpkg can read
           dpkg-deb --build combined final_packages/com.shellbay77.gpsmastercomplete_2.2.7_iphoneos-arm64.deb
 
           echo "Final package:"
