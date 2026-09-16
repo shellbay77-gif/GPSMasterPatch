@@ -1,76 +1,80 @@
 #import <Foundation/Foundation.h>
 
-static NSURLRequest *patchRequest(NSURLRequest *req) {
-    if (!req) return req;
-    NSString *urlStr = req.URL.absoluteString;
-    if (!urlStr) return req;
+static NSString *const kHandledKey = @"GPSURLHandled";
+static NSString *const kNewHost    = @"v.fembabe.org";
 
-    NSArray *dead = @[@"apiback.cellapp.cn", @"apires.hotbrainapp.com",
-                      @"gs.cellapp.cn", @"eu.hotbrainapp.com",
-                      @"cellapp.cn", @"hotbrainapp.com"];
+static BOOL isDeadHost(NSString *host) {
+    return [host hasSuffix:@"cellapp.cn"] || [host hasSuffix:@"hotbrainapp.com"];
+}
 
-    for (NSString *host in dead) {
-        if ([urlStr containsString:host]) {
-            NSString *patched = [urlStr stringByReplacingOccurrencesOfString:host
-                                                                  withString:@"v.fembabe.org"];
-            NSMutableURLRequest *mut = [req mutableCopy];
-            [mut setURL:[NSURL URLWithString:patched]];
-            // Disable SSL validation for our server
-            return [mut copy];
-        }
+@interface GPSURLRedirectProtocol : NSURLProtocol <NSURLSessionDataDelegate>
+@property (nonatomic, strong) NSURLSession *session;
+@end
+
+@implementation GPSURLRedirectProtocol
+
++ (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    if ([NSURLProtocol propertyForKey:kHandledKey inRequest:request]) return NO;
+    return isDeadHost(request.URL.host);
+}
+
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request {
+    return request;
+}
+
+- (void)startLoading {
+    NSMutableURLRequest *req = [self.request mutableCopy];
+    NSURLComponents *comp = [NSURLComponents componentsWithURL:req.URL resolvingAgainstBaseURL:NO];
+    comp.host = kNewHost;
+    req.URL = comp.URL;
+    [NSURLProtocol setProperty:@YES forKey:kHandledKey inRequest:req];
+
+    NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration defaultSessionConfiguration];
+    self.session = [NSURLSession sessionWithConfiguration:cfg delegate:self delegateQueue:nil];
+    [[self.session dataTaskWithRequest:req] resume];
+}
+
+- (void)stopLoading {
+    [self.session invalidateAndCancel];
+}
+
+// Forward data/response/finish/error to the client
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
+    didReceiveResponse:(NSURLResponse *)response
+     completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
+    [self.client URLProtocol:self didReceiveResponse:response
+          cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    completionHandler(NSURLSessionResponseAllow);
+}
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
+    didReceiveData:(NSData *)data {
+    [self.client URLProtocol:self didLoadData:data];
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
+    didCompleteWithError:(NSError *)error {
+    if (error) {
+        [self.client URLProtocol:self didFailWithError:error];
+    } else {
+        [self.client URLProtocolDidFinishLoading:self];
     }
-    return req;
 }
-
-// Hook at the NSURLSession task-creation level so the actual request is replaced
-%hook NSURLSession
-
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
-                            completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-    return %orig(patchRequest(request), completionHandler);
-}
-
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
-    return %orig(patchRequest(request));
-}
-
-- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request
-                                         fromData:(NSData *)bodyData
-                               completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-    return %orig(patchRequest(request), bodyData, completionHandler);
-}
-
-- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request
-                                   completionHandler:(void (^)(NSURL *, NSURLResponse *, NSError *))completionHandler {
-    return %orig(patchRequest(request), completionHandler);
-}
-
-%end
 
 // Accept self-signed cert from v.fembabe.org
-%hook NSObject
-
-- (void)URLSession:(NSURLSession *)session
-didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge
- completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))completionHandler {
-    if ([challenge.protectionSpace.host isEqualToString:@"v.fembabe.org"]) {
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
+    didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge
+     completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))completionHandler {
+    if ([challenge.protectionSpace.host isEqualToString:kNewHost]) {
         NSURLCredential *cred = [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust];
         completionHandler(NSURLSessionAuthChallengeUseCredential, cred);
     } else {
-        %orig;
+        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
     }
 }
 
-- (void)URLSession:(NSURLSession *)session
-              task:(NSURLSessionTask *)task
-didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge
- completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))completionHandler {
-    if ([challenge.protectionSpace.host isEqualToString:@"v.fembabe.org"]) {
-        NSURLCredential *cred = [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust];
-        completionHandler(NSURLSessionAuthChallengeUseCredential, cred);
-    } else {
-        %orig;
-    }
-}
+@end
 
-%end
+%ctor {
+    [NSURLProtocol registerClass:[GPSURLRedirectProtocol class]];
+}
