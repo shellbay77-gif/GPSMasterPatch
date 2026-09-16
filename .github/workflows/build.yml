@@ -1,0 +1,28 @@
+﻿name: Build GPSMasterPatch
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Theos Environment
+        uses: theos/theos-action@v1
+
+      - name: Build Tweak Package
+        run: |
+          make package FINALPACKAGE=1
+        env:
+          THEOS: ${{ github.workspace }}/theos
+
+      - name: Upload Artifact (.deb)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GPSMasterPatch-deb
+          path: packages/*.deb

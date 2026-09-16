@@ -1,1 +1,1 @@
-{ Filter = { Bundles = ( "net.joebruce.GpsMaster", "net.joebruce.gpsmaster" ); }; }
+﻿{ Filter = { Bundles = ( "net.joebruce.GpsMaster" ); }; }
