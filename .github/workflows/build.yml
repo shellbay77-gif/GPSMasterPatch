@@ -7,30 +7,23 @@ on:
 
 jobs:
   build:
-    runs-on: macos-13
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Theos
+      - name: Install Dependencies
         run: |
-          brew install ldid make xz
-          git clone --recursive https://github.com/theos/theos.git ~/theos
-          echo "THEOS=~/theos" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y build-essential fakeroot
 
-      - name: Setup iOS SDK
-        run: |
-          mkdir -p ~/theos/sdks
-          cd ~/theos/sdks
-          curl -LO https://github.com/theos/sdks/releases/download/2024-08-26/iPhoneOS17.5.sdk.tar.xz
-          tar -xJf iPhoneOS17.5.sdk.tar.xz
-          ls -la
+      - name: Setup Theos
+        uses: nscale/action-setup-theos@v1
+        with:
+          theos-version: master
 
       - name: Build Package
-        run: |
-          export THEOS=~/theos
-          export PATH="$THEOS/bin:$PATH"
-          gmake package FINALPACKAGE=1
+        run: make package FINALPACKAGE=1
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
