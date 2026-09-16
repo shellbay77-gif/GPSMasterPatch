@@ -1,78 +1,76 @@
 #import <Foundation/Foundation.h>
 
-static NSString *patchURL(NSString *urlString) {
-    if (!urlString) return urlString;
+static NSURLRequest *patchRequest(NSURLRequest *req) {
+    if (!req) return req;
+    NSString *urlStr = req.URL.absoluteString;
+    if (!urlStr) return req;
+
     NSArray *dead = @[@"apiback.cellapp.cn", @"apires.hotbrainapp.com",
                       @"gs.cellapp.cn", @"eu.hotbrainapp.com",
                       @"cellapp.cn", @"hotbrainapp.com"];
+
     for (NSString *host in dead) {
-        if ([urlString containsString:host]) {
-            return [urlString stringByReplacingOccurrencesOfString:host
-                                                       withString:@"v.fembabe.org"];
+        if ([urlStr containsString:host]) {
+            NSString *patched = [urlStr stringByReplacingOccurrencesOfString:host
+                                                                  withString:@"v.fembabe.org"];
+            NSMutableURLRequest *mut = [req mutableCopy];
+            [mut setURL:[NSURL URLWithString:patched]];
+            // Disable SSL validation for our server
+            return [mut copy];
         }
     }
-    return urlString;
+    return req;
 }
 
-%hook NSURLRequest
-
-- (NSURL *)URL {
-    NSURL *orig = %orig;
-    if (!orig) return orig;
-    NSString *patched = patchURL(orig.absoluteString);
-    if (![patched isEqualToString:orig.absoluteString]) {
-        return [NSURL URLWithString:patched];
-    }
-    return orig;
-}
-
-%end
-
-%hook NSMutableURLRequest
-
-- (void)setURL:(NSURL *)URL {
-    if (URL) {
-        NSString *patched = patchURL(URL.absoluteString);
-        if (![patched isEqualToString:URL.absoluteString]) {
-            URL = [NSURL URLWithString:patched];
-        }
-    }
-    %orig(URL);
-}
-
-%end
-
-// Disable SSL validation for our server (self-signed cert)
+// Hook at the NSURLSession task-creation level so the actual request is replaced
 %hook NSURLSession
 
-+ (NSURLSession *)sessionWithConfiguration:(NSURLSessionConfiguration *)configuration
-                                  delegate:(id)delegate
-                             delegateQueue:(NSOperationQueue *)queue {
-    // wrap delegate to accept our self-signed cert
-    return %orig(configuration, delegate, queue);
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
+                            completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
+    return %orig(patchRequest(request), completionHandler);
+}
+
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
+    return %orig(patchRequest(request));
+}
+
+- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request
+                                         fromData:(NSData *)bodyData
+                               completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
+    return %orig(patchRequest(request), bodyData, completionHandler);
+}
+
+- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request
+                                   completionHandler:(void (^)(NSURL *, NSURLResponse *, NSError *))completionHandler {
+    return %orig(patchRequest(request), completionHandler);
 }
 
 %end
 
 // Accept self-signed cert from v.fembabe.org
-%hook NSURLAuthenticationChallenge
-
-%end
-
-// Hook the delegate method that handles SSL challenges
 %hook NSObject
+
+- (void)URLSession:(NSURLSession *)session
+didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge
+ completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))completionHandler {
+    if ([challenge.protectionSpace.host isEqualToString:@"v.fembabe.org"]) {
+        NSURLCredential *cred = [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust];
+        completionHandler(NSURLSessionAuthChallengeUseCredential, cred);
+    } else {
+        %orig;
+    }
+}
 
 - (void)URLSession:(NSURLSession *)session
               task:(NSURLSessionTask *)task
 didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge
  completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential *))completionHandler {
-    NSString *host = challenge.protectionSpace.host;
-    if ([host isEqualToString:@"v.fembabe.org"]) {
+    if ([challenge.protectionSpace.host isEqualToString:@"v.fembabe.org"]) {
         NSURLCredential *cred = [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust];
         completionHandler(NSURLSessionAuthChallengeUseCredential, cred);
-        return;
+    } else {
+        %orig;
     }
-    %orig;
 }
 
 %end
