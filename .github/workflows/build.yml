@@ -15,19 +15,22 @@ jobs:
       - name: Setup Theos
         run: |
           brew install ldid make
-          echo "THEOS=~/theos" >> $GITHUB_ENV
-          git clone --recursive https://github.com/theos/theos.git ~/theos
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+        env:
+          THEOS: ${{ runner.temp }}/theos
 
       - name: Setup iOS SDK
         run: |
-          curl -LO https://github.com/theos/sdks/releases/download/2024-08-26/iPhoneOS17.5.sdk.tar.xz
-          tar -xf iPhoneOS17.5.sdk.tar.xz -C ~/theos/sdks/
+          cd $THEOS/sdks
+          curl -sL https://github.com/theos/sdks/releases/latest/download/sdks.tar.xz | tar xJf -
+        env:
+          THEOS: ${{ runner.temp }}/theos
 
       - name: Build Package
         run: |
-          export THEOS=~/theos
-          export PATH="$THEOS/bin:$PATH"
           gmake package FINALPACKAGE=1
+        env:
+          THEOS: ${{ runner.temp }}/theos
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
