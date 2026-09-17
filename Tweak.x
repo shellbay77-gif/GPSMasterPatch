@@ -1,53 +1,31 @@
 #import <Foundation/Foundation.h>
-#import <objc/runtime.h>
 
-// Hook NSDictionary to intercept memberExTime when reading from plist
-%hook NSDictionary
+// CAProMemberHandler is the cellmember pod singleton that tracks membership
+@interface CAProMemberHandler : NSObject
++ (instancetype)sharedHandler;
++ (instancetype)sharedManager;
+- (BOOL)isMember;
+- (long long)memberExTime;
+- (long long)memberExpireTime;
+- (long long)expireTime;
+- (NSString *)memberType;
+- (NSInteger)status;
+- (NSInteger)memberStatus;
+- (NSInteger)isPro;
+- (NSInteger)isVip;
+- (NSInteger)featureFlag;
+@end
 
-- (id)objectForKey:(id)key {
-    id result = %orig;
-    
-    // If reading memberExTime, return a far-future date (year 2099)
-    if ([key isKindOfClass:[NSString class]] && [(NSString *)key isEqualToString:@"memberExTime"]) {
-        return [NSNumber numberWithDouble:4070908800.0];
-    }
-    
-    return result;
-}
-
-%end
-
-// Also hook NSUserDefaults in case they use that
-%hook NSUserDefaults
-
-- (id)objectForKey:(NSString *)key {
-    if ([key isEqualToString:@"memberExTime"]) {
-        return [NSNumber numberWithDouble:4070908800.0];
-    }
-    return %orig;
-}
-
-- (double)doubleForKey:(NSString *)key {
-    if ([key isEqualToString:@"memberExTime"]) {
-        return 4070908800.0;
-    }
-    return %orig;
-}
-
-%end
-
-// Hook NSDate laterDate: comparison to always return the expiration date (not expired)
-%hook NSDate
-
-- (NSDate *)laterDate:(NSDate *)anotherDate {
-    NSDate *result = %orig;
-    
-    // If comparing with a date far in future (membership check), return self
-    if ([anotherDate timeIntervalSince1970] > 4000000000) {
-        return anotherDate;
-    }
-    
-    return result;
-}
-
+// Hook the membership handler to always return active
+%hook CAProMemberHandler
+- (BOOL)isMember       { return YES; }
+- (long long)memberExTime    { return 4070908800LL; }
+- (long long)memberExpireTime { return 4070908800LL; }
+- (long long)expireTime      { return 4070908800LL; }
+- (NSString *)memberType     { return @"lifetime"; }
+- (NSInteger)status          { return 1; }
+- (NSInteger)memberStatus    { return 1; }
+- (NSInteger)isPro           { return 1; }
+- (NSInteger)isVip           { return 1; }
+- (NSInteger)featureFlag     { return 255; }
 %end
