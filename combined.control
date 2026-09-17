@@ -7,5 +7,5 @@ Maintainer: shellbay77
 Author: shellbay77
 Section: Tweaks
 Depends: mobilesubstrate, firmware (>= 15.0)
-Replaces: net.joebruce.gpsmaster
-Conflicts: net.joebruce.gpsmaster
+Replaces: net.joebruce.gpsmaster, com.shellbay77.gpsmasterpatch
+Conflicts: net.joebruce.gpsmaster, com.shellbay77.gpsmasterpatch
